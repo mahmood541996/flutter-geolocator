@@ -147,26 +147,44 @@
 
 - (void)onGetCurrentPositionWithArguments:(id _Nullable)arguments
                                    result:(FlutterResult)result {
-  if (![[self createPermissionHandler] hasPermission]) {
-    result([FlutterError errorWithCode: GeolocatorErrorPermissionDenied
-                               message:@"User denied permissions to access the device's location."
-                               details:nil]);
-    return;
-  }
-  
-  CLLocationAccuracy accuracy = [LocationAccuracyMapper toCLLocationAccuracy:(NSNumber *)arguments[@"accuracy"]];
-  GeolocationHandler *geolocationHandler = [self createGeolocationHandler];
-  
-  [geolocationHandler requestPositionWithDesiredAccuracy:accuracy
-                                           resultHandler:^(CLLocation *location) {
-    result([LocationMapper toDictionary:location]);
-  }
-                                            errorHandler:^(NSString *errorCode, NSString *errorDescription){
-    result([FlutterError errorWithCode: errorCode
-                               message: errorDescription
-                               details: nil]);
-  }];
+    if (![[self createPermissionHandler] hasPermission]) {
+        result([FlutterError errorWithCode: GeolocatorErrorPermissionDenied
+                                   message:@"User denied permissions to access the device's location."
+                                   details:nil]);
+        return;
+    }
+
+    CLLocationAccuracy accuracy = [LocationAccuracyMapper toCLLocationAccuracy:(NSNumber *)arguments[@"accuracy"]];
+    GeolocationHandler *geolocationHandler = [self createGeolocationHandler];
+
+    [geolocationHandler requestPositionWithDesiredAccuracy:accuracy
+                                             resultHandler:^(CLLocation *location) {
+        result([LocationMapper toDictionary:location]);
+    }
+                                              errorHandler:^(NSString *errorCode, NSString *errorDescription){
+        // Check for kCLErrorDomain error 1 (location services denied) and request location services if denied
+        if ([errorCode isEqualToString:kCLErrorDomain] && errorDescription.code == kCLErrorDenied) {
+            // Request location services
+            [geolocationHandler requestLocationServices];
+            // Retry getting the location after location services are enabled
+            [geolocationHandler requestPositionWithDesiredAccuracy:accuracy
+                                                     resultHandler:^(CLLocation *location) {
+                result([LocationMapper toDictionary:location]);
+            }
+                                                      errorHandler:^(NSString *errorCode, NSString *errorDescription){
+                result([FlutterError errorWithCode: errorCode
+                                           message: errorDescription
+                                           details: nil]);
+            }];
+            return;
+        }
+
+        result([FlutterError errorWithCode: errorCode
+                                   message: errorDescription
+                                   details: nil]);
+    }];
 }
+
 
 
 - (void)openSettings:(FlutterResult)result {
